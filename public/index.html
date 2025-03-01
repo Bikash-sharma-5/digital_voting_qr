@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Voter QR Code Verification</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.4/html5-qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container {  margin: auto; text-align: center; }
+        .hidden { display: none; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 8px; border: 1px solid black; text-align: center; }
+    </style>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Voter QR Code Verification</h1>
+        <button onclick="showTab('generate')">Generate QR Code</button>
+        <button onclick="showTab('scan')">Scan QR Code</button>
+        <button onclick="showTab('database')">View Database</button>
+
+        <!-- Generate QR Section -->
+        <div id="generate" class="tab">
+            <h2>Generate Voter QR Code</h2>
+            <input type="text" id="voterName" placeholder="Enter Name">
+            <input type="text" id="voterId" placeholder="Enter Voter ID">
+            <button onclick="addToDatabase()">Add to Database</button>
+            <button onclick="generateQRCode()">Generate QR Code</button>
+            <div id="qrContainer"></div>
+        </div>
+
+        <!-- Scan QR Section -->
+        <div id="scan" class="tab hidden">
+            <h2>Scan QR Code</h2>
+            <div id="reader" style="width: 300px;"></div>
+            <button onclick="startScan()">Start Scanner</button>
+            <button onclick="stopScan()">Stop Scanner</button>
+            <p id="scanResult"></p>
+        </div>
+
+        <!-- Database Section -->
+        <div id="database" class="tab hidden">
+            <h2>Voter Database</h2>
+            <input type="text" id="search" placeholder="Search by Voter ID" onkeyup="filterDatabase()">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Voter ID</th>
+                        <th>Name (Encrypted)</th>
+                        <th>Voted</th>
+                    </tr>
+                </thead>
+                <tbody id="voterList"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const SECRET_KEY = "secureKey123";
+        let database = [];
+
+        function showTab(tab) {
+            document.querySelectorAll(".tab").forEach(el => el.classList.add("hidden"));
+            document.getElementById(tab).classList.remove("hidden");
+        }
+
+        function encryptData(data) {
+            return CryptoJS.AES.encrypt(data, SECRET_KEY).toString();
+        }
+
+        function decryptData(data) {
+            return CryptoJS.AES.decrypt(data, SECRET_KEY).toString(CryptoJS.enc.Utf8);
+        }
+
+        function addToDatabase() {
+            let voterName = document.getElementById("voterName").value.trim();
+            let voterId = document.getElementById("voterId").value.trim();
+            if (!voterName || !voterId) return alert("Enter a valid Name and Voter ID");
+
+            if (!database.some(entry => entry.voterId === voterId)) {
+                database.push({ voterId, voterName: encryptData(voterName), voted: false });
+                updateDatabase();
+                alert("Voter added to database!");
+            } else {
+                alert("Voter ID already exists in database!");
+            }
+        }
+
+        function generateQRCode() {
+            let voterId = document.getElementById("voterId").value.trim();
+            if (!voterId) return alert("Enter Voter ID");
+
+            let voter = database.find(entry => entry.voterId === voterId);
+            if (!voter) return alert("Voter ID not found in database! Add first.");
+
+            let encryptedData = encryptData(voterId);
+            let qrContainer = document.getElementById("qrContainer");
+            qrContainer.innerHTML = ""; // Clear previous QR code
+
+            new QRCode(qrContainer, {
+                text: encryptedData,
+                width: 200,
+                height: 200
+            });
+        }
+
+        let qrScanner;
+
+        function startScan() {
+            qrScanner = new Html5Qrcode("reader");
+            qrScanner.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: 250 },
+                (decodedText) => {
+                    try {
+                        let decryptedData = decryptData(decodedText);
+                        let voter = database.find(entry => entry.voterId === decryptedData);
+
+                        if (voter) {
+                            if (voter.voted) {
+                                alert("Voter has already voted!");
+                            } else {
+                                voter.voted = true;
+                                updateDatabase();
+                                document.getElementById("scanResult").innerText = "Voter Verified: " + decryptedData;
+                            }
+                        } else {
+                            document.getElementById("scanResult").innerText = "Voter ID not found!";
+                        }
+                    } catch (err) {
+                        document.getElementById("scanResult").innerText = "Invalid QR Code";
+                    }
+                },
+                (errorMessage) => {
+                    console.warn("QR Scan Error: ", errorMessage);
+                }
+            ).catch(err => alert("QR Scanner Failed: " + err.message));
+        }
+
+        function stopScan() {
+            if (qrScanner) {
+                qrScanner.stop().then(() => {
+                    console.log("QR Scanner Stopped");
+                }).catch(err => console.error("Error stopping scanner:", err));
+            }
+        }
+
+        function updateDatabase() {
+            let table = document.getElementById("voterList");
+            table.innerHTML = "";
+            database.forEach(({ voterId, voterName, voted }) => {
+                let row = table.insertRow();
+                row.insertCell(0).innerText = voterId;
+                row.insertCell(1).innerText = voterName;
+                row.insertCell(2).innerText = voted ? "✅" : "❌";
+            });
+        }
+    </script>
+</body>
+</html>
